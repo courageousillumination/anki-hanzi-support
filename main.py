@@ -5,13 +5,13 @@ import dotenv
 import json
 import google.cloud.texttospeech as tts
 from tqdm import tqdm
+import argparse
 
 dotenv.load_dotenv()
 
 TTS_CLIENT = tts.TextToSpeechClient()
 
 def synthesize_audio(text, filename):
-    print(text)
     synthesis_input = tts.SynthesisInput(text=text)
     voice = tts.VoiceSelectionParams(
         language_code="cmn-CN",
@@ -70,7 +70,6 @@ Respond in JSON like this:
 
 
 def process_word(hanzi, output_writer):
-    print(f"Processing: {hanzi}")
     try:
         fields = generate_fields_from_hanzi(hanzi)
 
@@ -101,7 +100,11 @@ def save_progress(writer, rows, output_file):
         writer.writerows(rows)
 
 def main():
-    input_file = "hanzi_input.txt"
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Process Hanzi words and generate Anki cards.')
+    parser.add_argument('input_file', nargs='?', help='Input file containing Hanzi words (one per line)')
+    args = parser.parse_args()
+
     output_file = "output/notes.csv"
     os.makedirs("output", exist_ok=True)
 
@@ -120,15 +123,36 @@ def main():
     failed_words = []
     row_count = 0
 
-    if os.path.exists(input_file):
-        with open(input_file, encoding="utf-8") as f:
+    # Get words from input file or interactive mode
+    if args.input_file:
+        if not os.path.exists(args.input_file):
+            print(f"Error: Input file '{args.input_file}' not found.")
+            return
+        with open(args.input_file, encoding="utf-8") as f:
             words = [line.strip() for line in f if line.strip()]
     else:
-        words = [input("Enter a Hanzi word: ").strip()]
-        if not words[0]:
+        print("No input file provided. Entering interactive mode.")
+        print("Enter Hanzi words one at a time. Press Enter twice to finish.")
+        words = []
+        while True:
+            word = input("Enter a Hanzi word (or press Enter to finish): ").strip()
+            if not word:
+                break
+            words.append(word)
+        
+        if not words:
+            print("No words entered. Exiting.")
             return
 
-    print(f"\nProcessing {len(words)} words...")
+    # Remove duplicates while preserving order
+    original_count = len(words)
+    seen = set()
+    words = [x for x in words if not (x in seen or seen.add(x))]
+    
+    if original_count > len(words):
+        print(f"\nRemoved {original_count - len(words)} duplicate words.")
+
+    print(f"\nProcessing {len(words)} unique words...")
     for hanzi in tqdm(words, desc="Processing words", unit="word"):
         try:
             fields = generate_fields_from_hanzi(hanzi)
